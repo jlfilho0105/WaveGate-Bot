@@ -1,0 +1,68 @@
+# ============================================================
+# WaveGate Bot — Configuração
+# WaveTrend M5 + Markov Gate Diário (LONG-ONLY)
+# ============================================================
+
+# --- Estratégia ---
+leverage: 3
+target_pct: 0.015        # 1.5% de alvo
+stop_pct: 0.005          # 0.5% de stop
+min_rr: 2.5              # R/R mínimo aceitável
+min_conditions: 4        # condições mínimas para sinal (de 7)
+
+# --- WaveTrend Oscillator ---
+wt_n1: 10               # smoothing da typical price
+wt_n2: 21               # smoothing do CI
+wt_oversold: -60        # zona de sobrevenda (compra)
+wt_overbought: 60       # zona de sobrecompra (sem uso, long-only)
+
+# --- Filtros de sinal ---
+body_ratio_min: 0.50     # proporção mínima do corpo do candle
+volume_factor: 1.5       # volume spike vs MA20
+
+# --- Markov Gate (diário) ---
+markov_window: 20
+markov_threshold: 0.05   # ±5% para classificar Bull/Sideways/Bear
+markov_min_train: 30
+
+# --- Indicadores ---
+ema_periods: [9, 21, 55]
+ma_periods: [5, 10, 30, 60]
+bb_period: 20
+bb_std: 2
+macd_fast: 12
+macd_slow: 26
+macd_signal: 9
+rsi_period: 14
+volume_ma_period: 20
+
+# --- Pares ---
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - BNBUSDT
+  - SOLUSDT
+  - XRPUSDT
+  - DOGEUSDT
+  - ADAUSDT
+  - AVAXUSDT
+  - DOTUSDT
+  - MATICUSDT
+
+# --- Gestão de risco ---
+initial_equity_usdt: 10000.0
+risk_per_trade_pct: 1.0       # risco por trade (% do equity)
+max_open_positions: 3          # máximo simultâneo
+daily_loss_limit_pct: 3.0      # stop diário (% do equity)
+
+# --- Dados ---
+buffer_size: 200
+history_days: 180
+timeframe: "5m"
+
+# --- Monitoramento ---
+monitor_update_pct: 25
+max_duration_min: 30
+
+# --- Resultados ---
+results_dir: "backtest/results"
