@@ -36,18 +36,13 @@ macd_signal: 9
 rsi_period: 14
 volume_ma_period: 20
 
-# --- Pares ---
+# --- Pares (validados no backtest v4: BTC e ADA excluídos) ---
 symbols:
-  - BTCUSDT
-  - ETHUSDT
-  - BNBUSDT
-  - SOLUSDT
-  - XRPUSDT
-  - DOGEUSDT
-  - ADAUSDT
-  - AVAXUSDT
-  - DOTUSDT
-  - MATICUSDT
+  - ETHUSDT     # PF=1.32  WR=32.6%  Ret=+9.4%  [VIAVEL]
+  - SOLUSDT     # PF=0.97  WR=27.5%  Ret=+2.8%  [PROXIMO]
+  - BNBUSDT     # PF=1.02  WR=21.3%  Ret=+4.1%  [BORDERLINE]
+  - XRPUSDT     # a testar
+  - AVAXUSDT    # a testar
 
 # --- Gestão de risco ---
 initial_equity_usdt: 10000.0

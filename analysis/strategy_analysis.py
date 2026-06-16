@@ -51,7 +51,7 @@ CONFIG = {
     "max_open_positions": 3,
 }
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT"]
+SYMBOLS = ["ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "AVAXUSDT"]
 TIMEFRAME_M5 = "5m"
 TIMEFRAME_1D = "1d"
 BINANCE_REST = "https://fapi.binance.com"
