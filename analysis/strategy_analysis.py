@@ -1,8 +1,8 @@
 """
-WaveGate Bot — Análise de Estratégia e Prospecção de Lucros
+WaveGate Bot -- Analise de Estrategia e Prospeccao de Lucros
 
-Executa análise estática da combinação WaveTrend + Markov sem dados ao vivo.
-Usa dados históricos da Binance (API pública, sem key necessária).
+Executa analise estatica da combinacao WaveTrend + Markov sem dados ao vivo.
+Usa dados historicos da Binance (API publica, sem key necessaria).
 
 Uso:
     python analysis/strategy_analysis.py
@@ -11,6 +11,9 @@ Uso:
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Forca UTF-8 no stdout (necessario no Windows com cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import asyncio
 import logging
@@ -35,10 +38,11 @@ CONFIG = {
     "wt_oversold": -60, "wt_overbought": 60,
     # Markov
     "markov_window": 20, "markov_threshold": 0.05, "markov_min_train": 30,
-    # Sinal
-    "leverage": 3, "min_rr": 2.5, "volume_factor": 1.5,
-    "target_pct": 0.015, "stop_pct": 0.005,
+    # Sinal — R/R 2.5x, janela 60 min (12 candles M5)
+    "leverage": 3, "min_rr": 2.0, "volume_factor": 1.5,
+    "target_pct": 0.010, "stop_pct": 0.004,
     "body_ratio_min": 0.50, "min_conditions": 4,
+    "max_candles_hold": 12,   # 60 min = 12 candles M5
     # EMA
     "ema_periods": [9, 21, 55],
     # Risco
@@ -218,11 +222,12 @@ def run_backtest(symbol: str, df_m5: pd.DataFrame, df_daily: pd.Series) -> dict:
         if rr < CONFIG["min_rr"]:
             i += 1; continue
 
-        # Simula resultado nos próximos 6 candles (30 min)
+        # Simula resultado nos proximos max_candles_hold candles (60 min)
+        max_hold = CONFIG.get("max_candles_hold", 12)
         outcome = "TIMEOUT"
         dur = 0
         exit_price = entry
-        for j in range(i+1, min(i+7, len(df))):
+        for j in range(i+1, min(i + max_hold + 1, len(df))):
             c = df.iloc[j]; dur += 1
             if c["high"] >= target:  outcome = "WIN";  exit_price = target; break
             if c["low"]  <= stop:    outcome = "LOSS"; exit_price = stop;   break
@@ -351,8 +356,8 @@ def profit_projection(metrics_list: list) -> None:
 
     breakeven_wr = stp_pct / (tgt_pct + stp_pct) * 100
     print(f"\n  Break-even win rate: {breakeven_wr:.1f}% (com R/R {tgt_pct/stp_pct:.1f}:1)")
-    print(f"\n  ⚠️  AVISO: projeções são estimativas teóricas.")
-    print(f"     O backtest não garante desempenho futuro.")
+    print(f"\n  AVISO: projecoes sao estimativas teoricas.")
+    print(f"     O backtest nao garante desempenho futuro.")
     print(f"     Sempre opere com capital que pode perder.")
     print("="*65 + "\n")
 

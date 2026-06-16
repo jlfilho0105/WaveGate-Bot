@@ -52,10 +52,10 @@ class TradeSignal:
 class SignalAgent:
     def __init__(self, config: dict):
         self.leverage        = config.get("leverage",        3)
-        self.min_rr          = config.get("min_rr",        2.5)
+        self.min_rr          = config.get("min_rr",        2.0)
         self.volume_factor   = config.get("volume_factor",  1.5)
-        self.target_pct      = config.get("target_pct",  0.015)
-        self.stop_pct        = config.get("stop_pct",    0.005)
+        self.target_pct      = config.get("target_pct",  0.010)
+        self.stop_pct        = config.get("stop_pct",    0.004)
         self.body_ratio_min  = config.get("body_ratio_min", 0.50)
         self.min_conditions  = config.get("min_conditions",    4)
         self._active: dict   = {}
