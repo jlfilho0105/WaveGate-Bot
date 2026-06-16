@@ -38,7 +38,7 @@ CONFIG = {
     "wt_oversold": -40, "wt_overbought": 60,
     # Markov
     "markov_window": 20, "markov_threshold": 0.05, "markov_min_train": 30,
-    # Sinal — R/R 2.0x, janela 90 min (18 candles M5)
+    # Sinal — R/R 2.0x (break-even WR=33.3%), janela 120 min (24 candles M5)
     "leverage": 3, "min_rr": 1.8, "volume_factor": 1.5,
     "target_pct": 0.006, "stop_pct": 0.003,
     "body_ratio_min": 0.50, "min_conditions": 4,
@@ -51,7 +51,7 @@ CONFIG = {
     "max_open_positions": 3,
 }
 
-SYMBOLS = ["ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "AVAXUSDT"]
+SYMBOLS = ["ETHUSDT", "SOLUSDT", "BNBUSDT"]
 TIMEFRAME_M5 = "5m"
 TIMEFRAME_1D = "1d"
 BINANCE_REST = "https://fapi.binance.com"

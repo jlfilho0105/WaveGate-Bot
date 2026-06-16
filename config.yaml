@@ -5,8 +5,8 @@
 
 # --- Estratégia ---
 leverage: 3
-target_pct: 0.006        # 0.6% de alvo (calibrado para M5 em 90 min)
-stop_pct: 0.003          # 0.3% de stop  → R/R = 2.0x
+target_pct: 0.006        # 0.6% de alvo → R/R = 2.0x (break-even WR = 33.3%)
+stop_pct: 0.003          # 0.3% de stop
 min_rr: 1.8              # R/R mínimo aceitável
 min_conditions: 4        # condições mínimas para sinal (de 7)
 
@@ -37,11 +37,10 @@ rsi_period: 14
 volume_ma_period: 20
 
 # --- Pares validados (backtest v5, 180 dias) ---
-# Excluidos: BTC(PF=0.89) ADA(PF=0.82) XRP(PF=0.74) AVAX(PF=0.78)
+# Paper trade: apenas ETHUSDT (unico par com PF>1.0 consistente)
+# Para adicionar: SOLUSDT(PF=0.97) BNBUSDT(PF=1.02) apos validacao 30 dias
 symbols:
   - ETHUSDT     # PF=1.32  WR=32.6%  Ret=+9.4%  [VIAVEL]
-  - SOLUSDT     # PF=0.97  WR=27.5%  Ret=+2.8%  [PROXIMO]
-  - BNBUSDT     # PF=1.02  WR=21.3%  Ret=+4.1%  [BORDERLINE]
 
 # --- Gestão de risco ---
 initial_equity_usdt: 10000.0
