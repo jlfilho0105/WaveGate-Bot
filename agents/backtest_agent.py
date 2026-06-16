@@ -94,8 +94,13 @@ class BacktestAgent:
         while i < len(df_wave) - 1:
             window = df_wave.iloc[:i + 1]
 
-            # Gate Markov: só em Bull
-            if not self.markov.is_bull(symbol, df_daily):
+            # Gate Markov sem look-ahead: só usa dados diários até a data do candle atual
+            candle_date = df_wave.index[i].date()
+            daily_avail = df_daily[df_daily.index.date <= candle_date]
+            if len(daily_avail) < self.markov.min_train:
+                i += 1
+                continue
+            if self.markov.get_regime(symbol, daily_avail) != "Bull":
                 i += 1
                 continue
 
