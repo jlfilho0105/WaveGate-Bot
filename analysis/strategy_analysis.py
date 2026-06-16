@@ -35,14 +35,14 @@ logger = logging.getLogger(__name__)
 CONFIG = {
     # WaveTrend
     "wt_n1": 10, "wt_n2": 21,
-    "wt_oversold": -60, "wt_overbought": 60,
+    "wt_oversold": -40, "wt_overbought": 60,
     # Markov
     "markov_window": 20, "markov_threshold": 0.05, "markov_min_train": 30,
-    # Sinal — R/R 2.5x, janela 60 min (12 candles M5)
-    "leverage": 3, "min_rr": 2.0, "volume_factor": 1.5,
-    "target_pct": 0.010, "stop_pct": 0.004,
+    # Sinal — R/R 2.0x, janela 90 min (18 candles M5)
+    "leverage": 3, "min_rr": 1.8, "volume_factor": 1.5,
+    "target_pct": 0.006, "stop_pct": 0.003,
     "body_ratio_min": 0.50, "min_conditions": 4,
-    "max_candles_hold": 12,   # 60 min = 12 candles M5
+    "max_candles_hold": 24,   # 120 min = 24 candles M5
     # EMA
     "ema_periods": [9, 21, 55],
     # Risco
@@ -123,9 +123,13 @@ def add_wave_trend(df: pd.DataFrame) -> pd.DataFrame:
     df["wt2"] = df["wt1"].rolling(4).mean()
     wt1p = df["wt1"].shift(1)
     wt2p = df["wt2"].shift(1)
-    df["wt_cross_up"] = (
-        (df["wt1"] > df["wt2"]) & (wt1p <= wt2p) & (wt1p < CONFIG["wt_oversold"])
+    crosses_up = (df["wt1"] > df["wt2"]) & (wt1p <= wt2p)
+    was_oversold = (
+        (df["wt1"].shift(1) < CONFIG["wt_oversold"]) |
+        (df["wt1"].shift(2) < CONFIG["wt_oversold"]) |
+        (df["wt1"].shift(3) < CONFIG["wt_oversold"])
     )
+    df["wt_cross_up"] = crosses_up & was_oversold
     return df
 
 # =========================================================================

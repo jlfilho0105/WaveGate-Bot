@@ -17,7 +17,7 @@ class WaveAgent:
     def __init__(self, config: dict):
         self.n1          = config.get("wt_n1", 10)
         self.n2          = config.get("wt_n2", 21)
-        self.oversold    = config.get("wt_oversold",   -60)
+        self.oversold    = config.get("wt_oversold",   -40)
         self.overbought  = config.get("wt_overbought",  60)
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -39,19 +39,26 @@ class WaveAgent:
         wt1_prev = df["wt1"].shift(1)
         wt2_prev = df["wt2"].shift(1)
 
-        # Crossover bullish: WT1 cruzou WT2 para cima, vindo de oversold
-        df["wt_cross_up"] = (
-            (df["wt1"] > df["wt2"]) &
-            (wt1_prev <= wt2_prev) &
-            (wt1_prev < self.oversold)
+        # Crossover bullish: WT1 cruzou WT2 para cima
+        wt_crosses_up = (df["wt1"] > df["wt2"]) & (wt1_prev <= wt2_prev)
+
+        # Oversold recente: WT1 estava abaixo do threshold nas últimas 3 barras
+        # (captura recuperações que iniciam antes do exato cruzamento)
+        wt1_was_oversold = (
+            (df["wt1"].shift(1) < self.oversold) |
+            (df["wt1"].shift(2) < self.oversold) |
+            (df["wt1"].shift(3) < self.oversold)
         )
+        df["wt_cross_up"] = wt_crosses_up & wt1_was_oversold
 
         # Crossover bearish (informativo — não usado no long-only)
-        df["wt_cross_down"] = (
-            (df["wt1"] < df["wt2"]) &
-            (wt1_prev >= wt2_prev) &
-            (wt1_prev > self.overbought)
+        wt_crosses_down = (df["wt1"] < df["wt2"]) & (wt1_prev >= wt2_prev)
+        wt1_was_overbought = (
+            (df["wt1"].shift(1) > self.overbought) |
+            (df["wt1"].shift(2) > self.overbought) |
+            (df["wt1"].shift(3) > self.overbought)
         )
+        df["wt_cross_down"] = wt_crosses_down & wt1_was_overbought
 
         df["wt_oversold"]   = df["wt1"] < self.oversold
         df["wt_overbought"] = df["wt1"] > self.overbought

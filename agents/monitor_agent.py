@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class MonitorAgent:
     def __init__(self, config: dict, portfolio=None):
         self.update_threshold_pct = config.get("monitor_update_pct", 25)
-        self.max_duration_min     = config.get("max_duration_min",    60)
+        self.max_duration_min     = config.get("max_duration_min",   120)
         self._portfolio           = portfolio
         self._watches: Dict[str, dict]    = {}
         self._callbacks: Dict[str, Callable] = {}
