@@ -1,6 +1,6 @@
 """
 AGENTE: DataAgent
-RESPONSABILIDADE: Coleta dados de mercado da Binance Futures via REST e WebSocket.
+RESPONSABILIDADE: Coleta dados de mercado da Binance Spot/Margin via REST e WebSocket.
 """
 
 import asyncio
@@ -13,8 +13,8 @@ import websockets
 
 logger = logging.getLogger(__name__)
 
-BINANCE_REST = "https://fapi.binance.com"
-BINANCE_WS   = "wss://fstream.binance.com"
+BINANCE_REST = "https://api.binance.com"
+BINANCE_WS   = "wss://stream.binance.com:9443"
 
 
 class DataAgent:
@@ -31,7 +31,7 @@ class DataAgent:
         self._running = False
 
     async def get_candles(self, symbol: str, limit: int = 200) -> pd.DataFrame:
-        url     = f"{BINANCE_REST}/fapi/v1/klines"
+        url     = f"{BINANCE_REST}/api/v3/klines"
         params  = {"symbol": symbol, "interval": self.timeframe, "limit": min(limit, 1000)}
         headers = {"X-MBX-APIKEY": self.api_key} if self.api_key else {}
 
@@ -45,7 +45,7 @@ class DataAgent:
         return df
 
     async def get_candles_history(self, symbol: str, days: int = 180) -> pd.DataFrame:
-        url     = f"{BINANCE_REST}/fapi/v1/klines"
+        url     = f"{BINANCE_REST}/api/v3/klines"
         headers = {"X-MBX-APIKEY": self.api_key} if self.api_key else {}
         total_candles = days * 288  # 288 candles M5 por dia
         all_data = []
@@ -70,7 +70,7 @@ class DataAgent:
         return df
 
     async def get_candles_history_tf(self, symbol: str, timeframe: str, days: int = 365) -> pd.DataFrame:
-        url     = f"{BINANCE_REST}/fapi/v1/klines"
+        url     = f"{BINANCE_REST}/api/v3/klines"
         headers = {"X-MBX-APIKEY": self.api_key} if self.api_key else {}
         tf_minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
         candles_per_day = (24 * 60) // tf_minutes.get(timeframe, 1440)

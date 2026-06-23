@@ -1,15 +1,17 @@
 """
-AGENTE: ExecutionAgent
-RESPONSABILIDADE: Envia ordens reais na Binance Futures (LONG-ONLY).
-  - Entrada: MARKET
-  - Stop Loss: STOP_MARKET
-  - Take Profit: TAKE_PROFIT_MARKET
-  - Fecha posição: MARKET reversa
+AGENTE: ExecutionAgent — Binance Spot Margin (Cross Margin)
+RESPONSABILIDADE: Ordens LONG via Margin para usuários sem acesso a Futuros.
+
+Fluxo:
+  1. Entrada: MARKET buy (com borrow automático pelo margin)
+  2. SL + TP:  OCO sell (/sapi/v1/margin/order/oco)
+  3. Timeout:  Cancela OCO + MARKET sell + repay
 """
 
 import hashlib
 import hmac
 import logging
+import math
 import time
 from urllib.parse import urlencode
 
@@ -19,7 +21,7 @@ from .signal_agent import TradeSignal
 
 logger = logging.getLogger(__name__)
 
-FAPI = "https://fapi.binance.com"
+SPOT = "https://api.binance.com"
 
 
 class ExecutionAgent:
@@ -28,8 +30,9 @@ class ExecutionAgent:
         self.api_secret = config.get("binance_api_secret", "")
         self.leverage   = config.get("leverage", 3)
         self.paper      = config.get("paper_trade", True)
+        self._oco_ids: dict[str, int] = {}   # symbol → orderListId
 
-    # ── utilidades internas ─────────────────────────────────────────────────
+    # ── Assinatura ──────────────────────────────────────────────────────────
 
     def _sign(self, params: dict) -> str:
         qs = urlencode(params)
@@ -44,159 +47,155 @@ class ExecutionAgent:
         params["timestamp"] = int(time.time() * 1000)
         params["signature"] = self._sign(params)
         async with session.post(
-            f"{FAPI}{path}", params=params, headers=self._headers()
+            f"{SPOT}{path}", params=params, headers=self._headers()
         ) as r:
             data = await r.json()
             if r.status != 200:
-                logger.error(f"Binance API erro {r.status}: {data}")
+                logger.error(f"Binance Margin erro {r.status} {path}: {data}")
             return data
 
     async def _delete(self, session: aiohttp.ClientSession, path: str, params: dict) -> dict:
         params["timestamp"] = int(time.time() * 1000)
         params["signature"] = self._sign(params)
         async with session.delete(
-            f"{FAPI}{path}", params=params, headers=self._headers()
+            f"{SPOT}{path}", params=params, headers=self._headers()
         ) as r:
-            data = await r.json()
-            return data
+            return await r.json()
 
-    # ── alavancagem ─────────────────────────────────────────────────────────
+    async def _get(self, session: aiohttp.ClientSession, path: str, params: dict) -> dict:
+        params["timestamp"] = int(time.time() * 1000)
+        params["signature"] = self._sign(params)
+        async with session.get(
+            f"{SPOT}{path}", params=params, headers=self._headers()
+        ) as r:
+            return await r.json()
 
-    async def set_leverage(self, symbol: str) -> None:
+    # ── Preço e step size ───────────────────────────────────────────────────
+
+    async def _get_price(self, symbol: str) -> float:
         async with aiohttp.ClientSession() as s:
-            r = await self._post(s, "/fapi/v1/leverage", {
-                "symbol": symbol, "leverage": self.leverage
-            })
-            logger.info(f"Alavancagem {symbol}: {r}")
+            async with s.get(f"{SPOT}/api/v3/ticker/price", params={"symbol": symbol}) as r:
+                data = await r.json()
+        return float(data["price"])
 
-    # ── quantidade mínima (step size) ───────────────────────────────────────
-
-    async def get_quantity(self, symbol: str, usdt_notional: float) -> float:
-        """Retorna quantidade de contratos respeitando stepSize da Binance."""
+    async def _get_lot_info(self, symbol: str) -> tuple[float, int]:
+        """Retorna (stepSize, price_decimals) do símbolo."""
         async with aiohttp.ClientSession() as s:
-            async with s.get(f"{FAPI}/fapi/v1/exchangeInfo") as r:
+            async with s.get(f"{SPOT}/api/v3/exchangeInfo", params={"symbol": symbol}) as r:
                 info = await r.json()
+        sym = info["symbols"][0]
+        step = 1.0
+        price_dec = 2
+        for f in sym["filters"]:
+            if f["filterType"] == "LOT_SIZE":
+                step = float(f["stepSize"])
+            if f["filterType"] == "PRICE_FILTER":
+                tick = float(f["tickSize"])
+                price_dec = max(0, int(round(-math.log10(tick))))
+        qty_dec = max(0, int(round(-math.log10(step)))) if step < 1 else 0
+        return step, qty_dec, price_dec
 
-        sym_info = next((x for x in info["symbols"] if x["symbol"] == symbol), None)
-        if not sym_info:
-            raise ValueError(f"Símbolo {symbol} não encontrado na exchange")
+    def _floor_qty(self, qty: float, step: float, decimals: int) -> float:
+        floored = math.floor(qty / step) * step
+        return round(floored, decimals)
 
-        # Preço atual para calcular quantidade
+    # ── Verificar conta margin ───────────────────────────────────────────────
+
+    async def check_account(self) -> dict:
         async with aiohttp.ClientSession() as s:
-            async with s.get(f"{FAPI}/fapi/v1/ticker/price", params={"symbol": symbol}) as r:
-                price_data = await r.json()
-        price = float(price_data["price"])
+            data = await self._get(s, "/sapi/v1/margin/account", {})
+        return data
 
-        raw_qty = usdt_notional / price
-
-        # Respeitar stepSize
-        lot_filter = next(
-            (f for f in sym_info["filters"] if f["filterType"] == "LOT_SIZE"), None
-        )
-        if lot_filter:
-            step = float(lot_filter["stepSize"])
-            decimals = len(str(step).rstrip("0").split(".")[-1]) if "." in str(step) else 0
-            raw_qty = round(raw_qty - (raw_qty % step), decimals)
-
-        return raw_qty
-
-    # ── abertura de posição ─────────────────────────────────────────────────
+    # ── Abertura de posição LONG ────────────────────────────────────────────
 
     async def open_long(self, signal: TradeSignal) -> dict:
-        """
-        Abre LONG com:
-          1. MARKET entry
-          2. STOP_MARKET  (stop loss)
-          3. TAKE_PROFIT_MARKET (take profit)
-        Retorna dict com ids das ordens ou resultado simulado (paper).
-        """
-        symbol = signal.symbol
+        symbol   = signal.symbol
         notional = signal.position_size_usdt * self.leverage
 
         if self.paper:
             logger.info(
                 f"[PAPER] LONG {symbol} | notional=${notional:.2f} "
-                f"entry={signal.entry_price:.4f} "
+                f"entry≈{signal.entry_price:.4f} "
                 f"tp={signal.target_price:.4f} sl={signal.stop_price:.4f}"
             )
-            return {"paper": True, "symbol": symbol}
+            return {"paper": True, "symbol": symbol, "qty": 0}
 
-        await self.set_leverage(symbol)
-        qty = await self.get_quantity(symbol, notional)
+        price  = await self._get_price(symbol)
+        step, qty_dec, price_dec = await self._get_lot_info(symbol)
+        qty    = self._floor_qty(notional / price, step, qty_dec)
+        tp     = round(signal.target_price, price_dec)
+        sl     = round(signal.stop_price,   price_dec)
+        sl_lim = round(sl * 0.999, price_dec)   # limit 0.1% abaixo do stop trigger
+
         if qty <= 0:
-            logger.error(f"Quantidade inválida para {symbol}: {qty}")
+            logger.error(f"Quantidade invalida para {symbol}: {qty}")
             return {}
 
         async with aiohttp.ClientSession() as s:
-            # 1. Entrada MARKET
-            entry_r = await self._post(s, "/fapi/v1/order", {
-                "symbol": symbol, "side": "BUY",
-                "type": "MARKET", "quantity": qty,
+            # 1. Compra MARKET com borrow automático (isAutoRepay=False → repay manual no close)
+            entry_r = await self._post(s, "/sapi/v1/margin/order", {
+                "symbol":      symbol,
+                "side":        "BUY",
+                "type":        "MARKET",
+                "quantity":    qty,
+                "sideEffectType": "MARGIN_BUY",   # borrow automático
             })
-            logger.info(f"ENTRY {symbol}: {entry_r.get('orderId')} | qty={qty}")
+            logger.info(f"ENTRY MARGIN {symbol}: orderId={entry_r.get('orderId')} qty={qty}")
 
-            # 2. Stop Loss
-            sl_r = await self._post(s, "/fapi/v1/order", {
-                "symbol": symbol, "side": "SELL",
-                "type": "STOP_MARKET",
-                "stopPrice": round(signal.stop_price, 4),
-                "quantity": qty,
-                "reduceOnly": "true",
+            # 2. OCO sell: TP + SL simultâneos
+            oco_r = await self._post(s, "/sapi/v1/margin/order/oco", {
+                "symbol":               symbol,
+                "side":                 "SELL",
+                "quantity":             qty,
+                "price":                tp,          # LIMIT (take profit)
+                "stopPrice":            sl,          # gatilho stop
+                "stopLimitPrice":       sl_lim,      # preço limite do stop
+                "stopLimitTimeInForce": "GTC",
+                "sideEffectType":       "AUTO_REPAY",  # repay automático ao fechar
             })
-            logger.info(f"SL {symbol}: {sl_r.get('orderId')} @ {signal.stop_price:.4f}")
-
-            # 3. Take Profit
-            tp_r = await self._post(s, "/fapi/v1/order", {
-                "symbol": symbol, "side": "SELL",
-                "type": "TAKE_PROFIT_MARKET",
-                "stopPrice": round(signal.target_price, 4),
-                "quantity": qty,
-                "reduceOnly": "true",
-            })
-            logger.info(f"TP {symbol}: {tp_r.get('orderId')} @ {signal.target_price:.4f}")
+            list_id = oco_r.get("orderListId", -1)
+            self._oco_ids[symbol] = list_id
+            logger.info(f"OCO {symbol}: listId={list_id} tp={tp} sl={sl}")
 
         return {
             "entry_id": entry_r.get("orderId"),
-            "sl_id":    sl_r.get("orderId"),
-            "tp_id":    tp_r.get("orderId"),
-            "qty":      qty,
+            "oco_list_id": list_id,
+            "qty": qty,
         }
 
-    # ── fechamento forçado (timeout) ────────────────────────────────────────
+    # ── Fechamento forçado (timeout) ────────────────────────────────────────
 
     async def close_long(self, symbol: str, qty: float) -> dict:
-        """Fecha posição LONG com MARKET, cancela ordens pendentes (SL/TP)."""
         if self.paper:
             logger.info(f"[PAPER] CLOSE {symbol} qty={qty}")
             return {"paper": True}
 
         async with aiohttp.ClientSession() as s:
-            # Cancela todas as ordens abertas do símbolo
-            await self._delete(s, "/fapi/v1/allOpenOrders", {"symbol": symbol})
+            # Cancela OCO pendente (se ainda ativo)
+            list_id = self._oco_ids.pop(symbol, None)
+            if list_id and list_id >= 0:
+                await self._delete(s, "/sapi/v1/margin/orderList", {
+                    "symbol": symbol, "orderListId": list_id
+                })
+                logger.info(f"OCO cancelado {symbol} listId={list_id}")
 
-            # Fecha com MARKET
-            r = await self._post(s, "/fapi/v1/order", {
-                "symbol": symbol, "side": "SELL",
-                "type": "MARKET", "quantity": qty,
-                "reduceOnly": "true",
+            # Vende MARKET com repay automático
+            r = await self._post(s, "/sapi/v1/margin/order", {
+                "symbol":         symbol,
+                "side":           "SELL",
+                "type":           "MARKET",
+                "quantity":       qty,
+                "sideEffectType": "AUTO_REPAY",
             })
-            logger.info(f"CLOSE {symbol}: {r.get('orderId')}")
+            logger.info(f"CLOSE MARGIN {symbol}: orderId={r.get('orderId')}")
         return r
 
-    # ── verificar posição aberta ────────────────────────────────────────────
+    # ── Posição aberta na conta margin ──────────────────────────────────────
 
     async def get_position(self, symbol: str) -> dict:
-        """Retorna posição atual na Binance para o símbolo."""
         if self.paper:
             return {}
+        base_asset = symbol.replace("USDT", "")
         async with aiohttp.ClientSession() as s:
-            params = {"symbol": symbol}
-            params["timestamp"] = int(time.time() * 1000)
-            params["signature"] = self._sign(params)
-            async with s.get(
-                f"{FAPI}/fapi/v2/positionRisk",
-                params=params, headers=self._headers()
-            ) as r:
-                data = await r.json()
-        pos = next((p for p in data if p["symbol"] == symbol), {})
-        return pos
+            data = await self._get(s, "/sapi/v1/margin/asset", {"asset": base_asset})
+        return data
