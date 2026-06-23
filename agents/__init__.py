@@ -8,6 +8,7 @@ from .portfolio_agent import PortfolioAgent
 from .monitor_agent   import MonitorAgent
 from .telegram_agent  import TelegramAgent
 from .backtest_agent  import BacktestAgent, BacktestResult
+from .execution_agent import ExecutionAgent
 
 __all__ = [
     "DataAgent",
@@ -23,4 +24,5 @@ __all__ = [
     "TelegramAgent",
     "BacktestAgent",
     "BacktestResult",
+    "ExecutionAgent",
 ]
