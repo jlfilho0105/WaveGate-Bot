@@ -31,8 +31,23 @@ class TelegramAgent:
         ]
         for cmd, handler in handlers:
             self._app.add_handler(CommandHandler(cmd, handler))
-        logger.info("TelegramAgent iniciado")
-        await self._app.run_polling()
+
+        # Usar API async nativa — evita conflito com event loop do main.py
+        await self._app.initialize()
+        await self._app.start()
+        await self._app.updater.start_polling(drop_pending_updates=True)
+        logger.info("TelegramAgent iniciado — aguardando comandos")
+
+        # Mantém o bot rodando indefinidamente (junto com o stream de dados)
+        import asyncio
+        await asyncio.Event().wait()
+
+    async def stop(self) -> None:
+        if self._app:
+            await self._app.updater.stop()
+            await self._app.stop()
+            await self._app.shutdown()
+            logger.info("TelegramAgent encerrado")
 
     # ------------------------------------------------------------------
     # Mensagens de sinal e monitoramento

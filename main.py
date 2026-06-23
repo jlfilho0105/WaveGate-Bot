@@ -107,9 +107,7 @@ async def main():
     if use_telegram:
         telegram = TelegramAgent(
             config,
-            portfolio    = portfolio,
-            on_start_cmd = data.start,
-            on_stop_cmd  = data.stop,
+            portfolio = portfolio,
         )
 
     # ── Pré-carrega cache Markov ────────────────────────────────────────────
@@ -171,7 +169,11 @@ async def main():
     )
 
     if telegram:
-        await telegram.start()
+        # Roda Telegram e stream de dados em paralelo
+        await asyncio.gather(
+            telegram.start(),
+            data.start(),
+        )
     else:
         await data.start()
 
