@@ -79,6 +79,14 @@ TELEGRAM_CHAT_ID=...
 | `/regime` | Regime Markov atual |
 | `/help` | Lista de comandos |
 
+## Ferramentas de analise
+
+```bash
+.venv\Scripts\python analysis\export_trades.py
+```
+
+Exporta os trades simulados do ETHUSDT para `backtest/results/trades_ETHUSDT.csv` e gera o resumo mensal em `backtest/results/trades_summary_monthly.csv`. A pasta `backtest/results/` fica fora do Git para evitar versionar artefatos gerados.
+
 ## Testes
 
 ```bash
