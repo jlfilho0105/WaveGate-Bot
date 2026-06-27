@@ -1,28 +1,42 @@
 # ============================================================
-# WaveGate Bot — Configuração
-# WaveTrend M5 + Markov Gate Diário (LONG-ONLY)
+# WaveGate Bot - OKX Directional
+# Markov diario + filtro H1 + WaveTrend M5 (LONG/SHORT)
 # ============================================================
 
-# --- Estratégia ---
+exchange: "okx"
+instrument_type: "SWAP"
+td_mode: "cross"
+okx_simulated_trading: false
+
+# --- Estrategia ---
 leverage: 3
-target_pct: 0.006        # 0.6% de alvo → R/R = 2.0x (break-even WR = 33.3%)
+target_pct: 0.006        # 0.6% de alvo
 stop_pct: 0.003          # 0.3% de stop
-min_rr: 1.8              # R/R mínimo aceitável
-min_conditions: 4        # condições mínimas para sinal (de 7)
+min_rr: 1.8
+min_conditions: 4
+allow_long: true
+allow_short: true
+trade_sideways: false
 
 # --- WaveTrend Oscillator ---
-wt_n1: 10               # smoothing da typical price
-wt_n2: 21               # smoothing do CI
-wt_oversold: -40        # zona de sobrevenda (calibrado para M5)
-wt_overbought: 60       # zona de sobrecompra (sem uso, long-only)
+wt_n1: 10
+wt_n2: 21
+wt_oversold: -40
+wt_overbought: 45
 
-# --- Filtros de sinal ---
-body_ratio_min: 0.50     # proporção mínima do corpo do candle
-volume_factor: 1.5       # volume spike vs MA20
+# --- Filtros M5 ---
+body_ratio_min: 0.50
+volume_factor: 1.5
 
-# --- Markov Gate (diário) ---
+# --- Filtro H1 ---
+h1_enabled: true
+h1_ema_fast: 21
+h1_ema_slow: 55
+h1_macd_confirm: true
+
+# --- Markov diario ---
 markov_window: 20
-markov_threshold: 0.05   # ±5% para classificar Bull/Sideways/Bear
+markov_threshold: 0.05
 markov_min_train: 30
 
 # --- Indicadores ---
@@ -36,26 +50,34 @@ macd_signal: 9
 rsi_period: 14
 volume_ma_period: 20
 
-# --- Pares validados (backtest v5, 180 dias) ---
-# Paper trade: apenas ETHUSDT (unico par com PF>1.0 consistente)
-# Para adicionar: SOLUSDT(PF=0.97) BNBUSDT(PF=1.02) apos validacao 30 dias
+# --- Universo OKX validado em backtest 180d ---
+# Core inicial: PF > 2, retorno positivo e consistencia mensal aceitavel.
 symbols:
-  - ETHUSDT     # PF=1.32  WR=32.6%  Ret=+9.4%  [VIAVEL]
+  - BNB-USDT-SWAP
+  - SAHARA-USDT-SWAP
+  - ETH-USDT-SWAP
+  - ADA-USDT-SWAP
+  - DOGE-USDT-SWAP
+  - AVAX-USDT-SWAP
+  - SUI-USDT-SWAP
 
-# --- Gestão de risco ---
+# Reserva para validacao futura:
+# XPL-USDT-SWAP, HYPE-USDT-SWAP, ONDO-USDT-SWAP, NEAR-USDT-SWAP
+
+# --- Gestao de risco ---
 initial_equity_usdt: 10000.0
-risk_per_trade_pct: 1.0       # risco por trade (% do equity)
-max_open_positions: 3          # máximo simultâneo
-daily_loss_limit_pct: 3.0      # stop diário (% do equity)
+risk_per_trade_pct: 0.5       # conservador para inicio em OKX
+max_open_positions: 3
+daily_loss_limit_pct: 2.0
 
 # --- Dados ---
-buffer_size: 200
+buffer_size: 1000             # necessario para filtro H1 EMA55
 history_days: 180
 timeframe: "5m"
 
 # --- Monitoramento ---
 monitor_update_pct: 25
-max_duration_min: 120      # janela 120 min = 24 candles M5
+max_duration_min: 120
 
 # --- Resultados ---
 results_dir: "backtest/results"

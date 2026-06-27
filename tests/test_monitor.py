@@ -20,12 +20,16 @@ results = []
 
 # ── Factory de sinal de teste ────────────────────────────────────────────────
 
-def make_signal(entry=2500.0, target_pct=0.006, stop_pct=0.003, leverage=3):
-    target = entry * (1 + target_pct)
-    stop   = entry * (1 - stop_pct)
+def make_signal(entry=2500.0, target_pct=0.006, stop_pct=0.003, leverage=3, direction="LONG"):
+    if direction == "SHORT":
+        target = entry * (1 - target_pct)
+        stop = entry * (1 + stop_pct)
+    else:
+        target = entry * (1 + target_pct)
+        stop = entry * (1 - stop_pct)
     return TradeSignal(
         symbol             = "ETHUSDT",
-        direction          = "LONG",
+        direction          = direction,
         entry_price        = entry,
         target_price       = target,
         stop_price         = stop,
@@ -55,7 +59,7 @@ def make_env(max_dur=120):
 def test_win():
     monitor, portfolio = make_env()
     fired = []
-    monitor.on_event("on_target", lambda s: fired.append("WIN"))
+    monitor.on_event("on_target", lambda s, *_: fired.append("WIN"))
 
     signal = make_signal(entry=2500.0)
     portfolio.open_position(signal)
@@ -81,7 +85,7 @@ def test_win():
 def test_loss():
     monitor, portfolio = make_env()
     fired = []
-    monitor.on_event("on_stop", lambda s: fired.append("LOSS"))
+    monitor.on_event("on_stop", lambda s, *_: fired.append("LOSS"))
 
     signal = make_signal(entry=2500.0)
     portfolio.open_position(signal)
@@ -107,7 +111,7 @@ def test_loss():
 def test_timeout():
     monitor, portfolio = make_env(max_dur=0)  # timeout imediato
     fired = []
-    monitor.on_event("on_timeout", lambda s, p=0.0: fired.append("TIMEOUT"))
+    monitor.on_event("on_timeout", lambda s, *args: fired.append("TIMEOUT"))
 
     signal = make_signal(entry=2500.0)
     portfolio.open_position(signal)
@@ -144,7 +148,7 @@ def test_progress():
 def test_no_watch():
     monitor, portfolio = make_env()
     fired = []
-    monitor.on_event("on_target", lambda s: fired.append("WIN"))
+    monitor.on_event("on_target", lambda s, *_: fired.append("WIN"))
 
     # Update sem posição monitorada — deve ignorar silenciosamente
     monitor.update_price("ETHUSDT", 99999.0)
@@ -157,8 +161,8 @@ def test_no_watch():
 def test_two_symbols():
     monitor, portfolio = make_env()
     closed = []
-    monitor.on_event("on_target", lambda s: closed.append(s.symbol + "_WIN"))
-    monitor.on_event("on_stop",   lambda s: closed.append(s.symbol + "_LOSS"))
+    monitor.on_event("on_target", lambda s, *_: closed.append(s.symbol + "_WIN"))
+    monitor.on_event("on_stop",   lambda s, *_: closed.append(s.symbol + "_LOSS"))
 
     sig_eth = make_signal(entry=2500.0)
     sig_sol = TradeSignal(
@@ -185,6 +189,28 @@ def test_two_symbols():
 
     results.append((PASS, "2 PARES: ETH WIN + SOL LOSS simultaneos"))
 
+
+def test_short_win_loss():
+    monitor, portfolio = make_env()
+    closed = []
+    monitor.on_event("on_target", lambda s, *_: closed.append("SHORT_WIN"))
+
+    signal = make_signal(entry=100.0, direction="SHORT")
+    portfolio.open_position(signal)
+    monitor.start_monitoring(signal)
+
+    monitor.update_price("ETHUSDT", 99.7)
+    assert len(closed) == 0, f"SHORT fechou antes do alvo: {closed}"
+
+    monitor.update_price("ETHUSDT", signal.target_price)
+    assert closed == ["SHORT_WIN"], f"SHORT WIN nao disparou: {closed}"
+
+    eq_expected = 10_000.0 + 100.0 * 3 * 0.006
+    assert abs(portfolio.equity - eq_expected) < 0.01, \
+        f"Equity short incorreta: {portfolio.equity:.4f} != {eq_expected:.4f}"
+
+    results.append((PASS, "SHORT: preco cai ate o alvo -> WIN + equity correta"))
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -195,6 +221,7 @@ if __name__ == "__main__":
         ("PROGRESSO",          test_progress),
         ("SEM POSICAO",        test_no_watch),
         ("2 PARES SIMULTANEOS",test_two_symbols),
+        ("SHORT WIN",          test_short_win_loss),
     ]
 
     print("\n" + "="*60)
