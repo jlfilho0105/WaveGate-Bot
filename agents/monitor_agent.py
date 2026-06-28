@@ -4,7 +4,7 @@ RESPONSABILIDADE: Acompanha posicoes LONG/SHORT, alvo, stop e timeout.
 """
 
 import logging
-from datetime import datetime, timedelta
+import datetime
 from typing import Callable, Dict
 
 from .signal_agent import TradeSignal
@@ -26,7 +26,7 @@ class MonitorAgent:
     def start_monitoring(self, signal: TradeSignal) -> None:
         self._watches[signal.symbol] = {
             "signal": signal,
-            "start_time": datetime.utcnow(),
+            "start_time": datetime.datetime.now(datetime.UTC),
             "last_notified_pct": 0,
         }
         logger.info(
@@ -45,11 +45,12 @@ class MonitorAgent:
 
         watch = self._watches[symbol]
         signal: TradeSignal = watch["signal"]
-        elapsed = datetime.utcnow() - watch["start_time"]
+        elapsed = datetime.datetime.now(datetime.UTC) - watch["start_time"]
 
-        if elapsed > timedelta(minutes=self.max_duration_min):
+        if elapsed > datetime.timedelta(minutes=self.max_duration_min):
+            qty = self._portfolio.get_open_qty(symbol) if self._portfolio else 0.0
             pnl = self._portfolio.close_position(symbol, current_price, "TIMEOUT") if self._portfolio else 0.0
-            self._emit("on_timeout", signal, current_price, pnl)
+            self._emit("on_timeout", signal, current_price, pnl, qty)
             self.stop_monitoring(symbol)
             return
 

@@ -39,7 +39,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 PAPER_TRADE = os.getenv("PAPER_TRADE", "true").lower() == "true"
-_open_qty: dict[str, float] = {}
 
 
 def load_config() -> dict:
@@ -70,6 +69,34 @@ async def _refresh_markov_loop(data, markov, symbols: list[str]) -> None:
                 logger.info(f"[MARKOV REFRESH] {sym} -> {regime}")
             except Exception as e:
                 logger.warning(f"Erro ao atualizar cache Markov {sym}: {e}")
+
+
+async def reconcile_live_positions(execution, portfolio, symbols: list[str]) -> bool:
+    portfolio.clear_open_positions()
+    try:
+        live_positions = await execution.get_open_positions(symbols)
+    except Exception as e:
+        logger.error(f"ERRO: nao foi possivel consultar posicoes abertas na OKX; abortando LIVE: {e}")
+        return False
+    if live_positions is None:
+        logger.error("ERRO: consulta de posicoes abertas na OKX falhou; abortando LIVE")
+        return False
+
+    for symbol, pos in live_positions.items():
+        if not all(key in pos for key in ("direction", "qty")):
+            portfolio.clear_open_positions()
+            logger.error(f"ERRO: posicao OKX incompleta para {symbol}; abortando LIVE")
+            return False
+        portfolio.protect_live_position(
+            symbol,
+            pos["direction"],
+            pos["qty"],
+            pos.get("avg_price", pos.get("entry_price", 0.0)),
+            pos.get("target_price", pos.get("tp", 0.0)),
+            pos.get("stop_price", pos.get("sl", 0.0)),
+            pos.get("side"),
+        )
+    return True
 
 
 async def main():
@@ -104,10 +131,12 @@ async def main():
             logger.error("ERRO: nao foi possivel obter equity real da OKX; abortando LIVE")
             return
 
+        if not await reconcile_live_positions(execution, portfolio, config["symbols"]):
+            return
+
     telegram = TelegramAgent(config, portfolio=portfolio) if use_telegram else None
 
     def _on_target(s, pnl=0.0):
-        _open_qty.pop(s.symbol, None)
         risk.register_result(pnl)
         signal.clear_signal(s.symbol)
         logger.info(f"[WIN] {s.symbol} {s.direction} | equity=${portfolio.equity:.2f} | pnl={pnl:+.2f}")
@@ -115,15 +144,13 @@ async def main():
             asyncio.create_task(telegram.send_target(s))
 
     def _on_stop(s, pnl=0.0):
-        _open_qty.pop(s.symbol, None)
         risk.register_result(pnl)
         signal.clear_signal(s.symbol)
         logger.info(f"[LOSS] {s.symbol} {s.direction} | equity=${portfolio.equity:.2f} | pnl={pnl:+.2f}")
         if telegram:
             asyncio.create_task(telegram.send_stop(s))
 
-    def _on_timeout(s, price=0.0, pnl=0.0):
-        qty = _open_qty.pop(s.symbol, 0)
+    def _on_timeout(s, price=0.0, pnl=0.0, qty=0.0):
         risk.register_result(pnl)
         signal.clear_signal(s.symbol)
         logger.info(f"[TIMEOUT] {s.symbol} {s.direction} | equity=${portfolio.equity:.2f} | qty={qty}")
@@ -159,7 +186,22 @@ async def main():
         last_price = float(df.iloc[-1]["close"])
         monitor.update_price(symbol, last_price)
 
-        if symbol in portfolio.open_positions:
+        local_position = portfolio.open_positions.get(symbol)
+        if local_position and local_position.get("live_protection") and not PAPER_TRADE:
+            try:
+                live_positions = await execution.get_open_positions([symbol])
+            except Exception as e:
+                logger.warning(f"Falha ao reconciliar posicao LIVE {symbol}: {e}")
+                return
+            if live_positions is None:
+                logger.warning(f"Consulta OKX sem sucesso; mantendo protecao LIVE para {symbol}")
+                return
+            if symbol not in live_positions:
+                portfolio.forget_open_position(symbol)
+                signal.clear_signal(symbol)
+            return
+
+        if local_position:
             return
 
         regime = markov.get_regime(symbol, df_daily)
@@ -177,13 +219,21 @@ async def main():
             return
 
         trade_signal.position_size_usdt = risk.size_position(trade_signal, portfolio.equity)
-        result = await execution.open_position(trade_signal)
+        try:
+            result = await execution.open_position(trade_signal)
+        except Exception as e:
+            logger.error(f"Falha ao executar entrada {symbol}: {e}")
+            signal.clear_signal(symbol)
+            return
         if not result:
             signal.clear_signal(symbol)
             return
 
-        _open_qty[symbol] = float(result.get("qty", 0) or 0)
-        portfolio.open_position(trade_signal)
+        portfolio.open_position(
+            trade_signal,
+            qty=float(result.get("qty", 0) or 0),
+            entry_id=result.get("entry_id"),
+        )
         monitor.start_monitoring(trade_signal)
 
         logger.info(

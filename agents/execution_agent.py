@@ -61,6 +61,19 @@ class ExecutionAgent:
             logger.error(f"OKX erro {method} {path}: {data}")
         return data
 
+    def _order_accepted(self, result: dict, action: str, symbol: str) -> bool:
+        if result.get("code") != "0":
+            return False
+        rows = result.get("data") or []
+        if not rows:
+            logger.error(f"OKX {action} {symbol}: resposta sem dados: {result}")
+            return False
+        row = rows[0]
+        if row.get("sCode", "0") != "0":
+            logger.error(f"OKX {action} {symbol} rejeitada: {row}")
+            return False
+        return True
+
     async def _public_get(self, path: str, params: dict) -> dict:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{OKX_REST}{path}", params=params) as resp:
@@ -92,11 +105,13 @@ class ExecutionAgent:
     async def set_leverage(self, symbol: str) -> None:
         if self.paper:
             return
-        await self._request("POST", "/api/v5/account/set-leverage", {
+        result = await self._request("POST", "/api/v5/account/set-leverage", {
             "instId": symbol,
             "lever": str(self.leverage),
             "mgnMode": self.td_mode,
         })
+        if not self._order_accepted(result, "SET_LEVERAGE", symbol):
+            raise RuntimeError(f"Falha ao configurar alavancagem OKX para {symbol}")
 
     async def open_position(self, signal: TradeSignal) -> dict:
         symbol = signal.symbol
@@ -130,6 +145,8 @@ class ExecutionAgent:
             }],
         }
         result = await self._request("POST", "/api/v5/trade/order", payload)
+        if not self._order_accepted(result, "ENTRY", symbol):
+            return {}
         order_id = (result.get("data") or [{}])[0].get("ordId")
         logger.info(f"OKX ENTRY {signal.direction} {symbol}: ordId={order_id} qty={qty}")
         return {"entry_id": order_id, "qty": qty}
@@ -153,9 +170,41 @@ class ExecutionAgent:
             "reduceOnly": "true",
         }
         result = await self._request("POST", "/api/v5/trade/order", payload)
+        if not self._order_accepted(result, "CLOSE", signal.symbol):
+            return {}
         order_id = (result.get("data") or [{}])[0].get("ordId")
         logger.info(f"OKX CLOSE {signal.direction} {signal.symbol}: ordId={order_id}")
         return result
+
+    async def get_open_positions(self, symbols: list[str] | None = None) -> dict[str, dict] | None:
+        if self.paper:
+            return {}
+        data = await self._request("GET", "/api/v5/account/positions")
+        if data.get("code") != "0":
+            return None
+
+        allowed = {s.upper() for s in symbols} if symbols else None
+        positions: dict[str, dict] = {}
+        for row in data.get("data") or []:
+            symbol = row.get("instId", "").upper()
+            if allowed is not None and symbol not in allowed:
+                continue
+            try:
+                qty = abs(float(row.get("pos") or 0))
+            except (TypeError, ValueError):
+                qty = 0.0
+            if qty <= 0:
+                continue
+            pos_side = (row.get("posSide") or "").lower()
+            raw_pos = float(row.get("pos") or 0)
+            direction = "SHORT" if pos_side == "short" or raw_pos < 0 else "LONG"
+            positions[symbol] = {
+                "qty": qty,
+                "direction": direction,
+                "avg_price": float(row.get("avgPx") or 0),
+                "upl": float(row.get("upl") or 0),
+            }
+        return positions
 
     async def open_long(self, signal: TradeSignal) -> dict:
         return await self.open_position(signal)

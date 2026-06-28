@@ -4,8 +4,8 @@ RESPONSABILIDADE: Gera sinais LONG/SHORT combinando Markov diario, H1 e WaveTren
 """
 
 import logging
+import datetime
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Optional
 
 import pandas as pd
@@ -41,7 +41,7 @@ class TradeSignal:
     risk_reward: float
     conditions_met: list
     position_size_usdt: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     wt1_value: float = 0.0
 
     @property

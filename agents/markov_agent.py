@@ -2,15 +2,15 @@
 AGENTE: MarkovAgent
 RESPONSABILIDADE: Gate macro de regime — classifica Bull/Sideways/Bear com Markov diário.
 
-Pesquisa validada (MarkovBinance v3): SHORT no Bear destrói resultados cripto.
-Este agente opera SOMENTE como gate long-only: libera operação em Bull, bloqueia em Bear/Sideways.
+No WaveGate, o regime direciona o lado operacional:
+Bull libera LONG, Bear libera SHORT e Sideways bloqueia entradas salvo configuracao explicita.
 """
 
 import logging
+import datetime
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ class MarkovAgent:
         return "Sideways"
 
     def is_bull(self, symbol: str, close_daily: pd.Series) -> bool:
-        """Gate: True somente se o regime atual é Bull."""
-        today = datetime.utcnow().date()
+        """Compatibilidade com fluxos long-only: True somente se o regime atual e Bull."""
+        today = datetime.datetime.now(datetime.UTC).date()
         if symbol in self._memory:
             cached_date, cached_regime, _ = self._memory[symbol]
             if cached_date == today:

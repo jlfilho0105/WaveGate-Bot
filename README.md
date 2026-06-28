@@ -1,110 +1,93 @@
 # WaveGate Bot
 
-**WaveTrend M5 + Markov Gate | Binance Spot Margin | LONG-ONLY**
+**OKX USDT-SWAP | Markov + H1 Trend + WaveTrend M5 | LONG/SHORT**
 
-Robô de trading que combina o WaveTrend Oscillator (LazyBear) no M5 com filtro de regime Markov diário. Opera exclusivamente comprado quando o mercado está em regime Bull.
+Robo direcional para contratos perpetuos da OKX. O regime Markov diario define a direcao macro, o H1 confirma tendencia e o WaveTrend no M5 dispara entradas.
 
-## Estratégia
+## Estrategia
 
-| Componente | Descrição |
-|------------|-----------|
-| **WaveSignal** | WT1 cruza WT2 para cima saindo de sobrevenda (<-40) nos últimos 3 candles |
-| **Markov Gate** | Transition matrix diária — só opera quando P[Bull] - P[Bear] > 10% |
-| **Confirmações** | EMA alinhada, volume spike, MACD subindo, corpo bullish (mín. 4/7) |
-| **Saída** | Alvo +0.6% / Stop -0.3% / R/R 2.0x / Timeout 120 min |
-| **Sizing** | 1% de risco por trade / máx. 3 posições simultâneas |
+| Camada | Regra |
+|--------|-------|
+| Markov diario | Bull = LONG, Bear = SHORT, Sideways = sem entrada |
+| Filtro H1 | EMA21/EMA55 alinhadas + MACD hist na direcao |
+| Entrada M5 LONG | WT1 cruza WT2 para cima apos sobrevenda |
+| Entrada M5 SHORT | WT1 cruza WT2 para baixo apos sobrecompra |
+| Confirmacoes | EMA M5, volume spike, MACD M5, corpo do candle |
+| Saida | TP 0.6%, SL 0.3%, timeout 120 min |
+| Risco | 0.5% alvo por trade, maximo 3 posicoes abertas |
 
-## Resultados (backtest v5 — 180 dias)
+## Universo Inicial
 
-| Par | WR | PF | Retorno | Status |
-|-----|----|----|---------|--------|
-| **ETHUSDT** | **32.6%** | **1.32** | **+9.4%** | ✅ Ativo |
-| SOLUSDT | 27.5% | 0.97 | +2.8% | Reserva |
-| BNBUSDT | 21.3% | 1.02 | +4.1% | Reserva |
-| XRPUSDT | 22.1% | 0.74 | -3.1% | Excluído |
-| AVAXUSDT | 25.6% | 0.78 | -5.2% | Excluído |
+Backtest OKX 180d com custo de 0.12% por trade:
 
-*Break-even: 33.3% WR com R/R 2:1. ETH único par viável.*
+| Ativo | Trades | WR | PF | Retorno | Meses positivos |
+|-------|-------:|---:|---:|--------:|----------------:|
+| BNB-USDT-SWAP | 27 | 77.8% | 13.83 | +8.84 | 5/5 |
+| SAHARA-USDT-SWAP | 33 | 84.8% | 6.40 | +11.34 | 6/6 |
+| ETH-USDT-SWAP | 21 | 81.0% | 5.40 | +5.79 | 6/6 |
+| ADA-USDT-SWAP | 15 | 73.3% | 3.83 | +3.90 | 6/6 |
+| DOGE-USDT-SWAP | 21 | 71.4% | 3.38 | +4.89 | 3/5 |
+| AVAX-USDT-SWAP | 26 | 61.5% | 2.21 | +4.20 | 6/6 |
+| SUI-USDT-SWAP | 21 | 66.7% | 2.66 | +4.20 | 5/7 |
+
+Consolidado dos 14 candidatos testados: 400 trades, WR 62.5%, PF 2.01, retorno liquido +59.25, max DD 3.78%, 7/7 meses positivos.
 
 ## Arquitetura
 
-```
+```text
 main.py
-├── DataAgent          # WebSocket Binance Spot (stream.binance.com)
-├── MarkovAgent        # Gate diário via cadeia de Markov
-├── WaveAgent          # WaveTrend Oscillator (LazyBear n1=10, n2=21)
-├── IndicatorAgent     # EMA 9/21/55, MACD, RSI, Bollinger Bands
-├── SignalAgent        # Avalia 7 condições, exige mínimo 4
-├── RiskAgent          # Position sizing + limites de exposição
-├── PortfolioAgent     # Rastreia equity e P&L (persiste em JSON)
-├── ExecutionAgent     # Ordens reais via Spot Margin (MARKET + OCO)
-├── MonitorAgent       # Detecta WIN/LOSS/TIMEOUT por candle
-└── TelegramAgent      # Notificações e comandos
+├── DataAgent          # REST + WebSocket OKX public (candle5m)
+├── MarkovAgent        # Regime diario Bull/Bear/Sideways
+├── WaveAgent          # WaveTrend WT1/WT2
+├── IndicatorAgent     # EMA, MACD, RSI, Bollinger, ATR
+├── SignalAgent        # LONG/SHORT com Markov + H1 + M5
+├── RiskAgent          # Sizing, limite de posicoes, stop diario
+├── PortfolioAgent     # Equity e PnL long/short
+├── ExecutionAgent     # OKX v5 market + TP/SL anexado
+├── MonitorAgent       # WIN/LOSS/TIMEOUT por candle fechado
+└── TelegramAgent      # Alertas e comandos
 ```
 
-## Instalação
+## Instalacao
 
 ```bash
-# 1. Clonar
 git clone https://github.com/jlfilho0105/WaveGate-Bot.git
 cd WaveGate-Bot
-
-# 2. Criar venv e instalar dependências
 setup.bat
-
-# 3. Configurar credenciais
 cp .env.example .env
-# editar .env com API keys Binance + token Telegram
-
-# 4. Rodar
 .venv\Scripts\python main.py
 ```
 
-## Configuração (.env)
+## Configuracao
 
 ```env
-PAPER_TRADE=false              # true = sem ordens reais
-BINANCE_API_KEY=...
-BINANCE_API_SECRET=...
+PAPER_TRADE=true
+OKX_API_KEY=...
+OKX_API_SECRET=...
+OKX_API_PASSPHRASE=...
 TELEGRAM_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 
+`PAPER_TRADE=true` e o padrao seguro. Troque para `false` somente depois de validar credenciais OKX, modo de conta e tamanho minimo dos contratos.
+
 ## Comandos Telegram
 
-| Comando | Função |
+| Comando | Funcao |
 |---------|--------|
-| `/status` | Posições abertas e métricas |
-| `/equity` | Equity atual e P&L |
-| `/regime` | Regime Markov atual |
+| `/status` | Posicoes abertas e metricas |
+| `/equity` | Equity atual e PnL |
+| `/regime` | Regra direcional Markov |
 | `/help` | Lista de comandos |
-
-## Ferramentas de analise
-
-```bash
-.venv\Scripts\python analysis\export_trades.py
-```
-
-Exporta os trades simulados do ETHUSDT para `backtest/results/trades_ETHUSDT.csv` e gera o resumo mensal em `backtest/results/trades_summary_monthly.csv`. A pasta `backtest/results/` fica fora do Git para evitar versionar artefatos gerados.
 
 ## Testes
 
 ```bash
 .venv\Scripts\python tests\test_monitor.py
-# 6/6 testes OK — WIN, LOSS, TIMEOUT, progresso, sem posição, 2 pares
 ```
 
-## Notas importantes
+## Notas
 
-- **Futuros bloqueado** para usuários no Brasil → usa Spot Margin Cross 3x
-- OCO (`/sapi/v1/margin/order/oco`) com `AUTO_REPAY` — repaga empréstimo automaticamente
-- Timeout: cancela OCO + MARKET sell com AUTO_REPAY
-- Reconexão WebSocket automática em 5s após queda
-- Expansão para SOL e BNB após WR live > 30% em 30 dias
-
-## Requisitos
-
-- Python 3.14+
-- Conta Binance com Cross Margin habilitado
-- API Key com permissão de Spot + Margin Trading
-- Bot Telegram criado via @BotFather
+- O bot usa candles fechados; em live, TP/SL devem ficar anexados na OKX para protecao intrabar.
+- Funding de perpetuos ainda nao entra no backtest consolidado.
+- O universo inicial deve ser revisado a cada 30 dias.

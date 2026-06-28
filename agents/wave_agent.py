@@ -51,7 +51,7 @@ class WaveAgent:
         )
         df["wt_cross_up"] = wt_crosses_up & wt1_was_oversold
 
-        # Crossover bearish (informativo — não usado no long-only)
+        # Crossover bearish usado para sinais SHORT quando o regime Markov e Bear.
         wt_crosses_down = (df["wt1"] < df["wt2"]) & (wt1_prev >= wt2_prev)
         wt1_was_overbought = (
             (df["wt1"].shift(1) > self.overbought) |
