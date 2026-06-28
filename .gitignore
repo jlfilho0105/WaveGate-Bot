@@ -9,3 +9,8 @@ data/portfolio_state.json
 backtest/results/
 *.png
 *.csv
+.pytest_cache/
+.venv/
+__pycache__/
+*.pyc
+.env
